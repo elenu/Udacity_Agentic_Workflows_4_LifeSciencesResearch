@@ -1596,7 +1596,9 @@ class DrugRepurposingOrchestrator:
                 roadmap = result
 
         self.audit.completed_at = now_iso()
-        self.audit.candidates_found = len(self.candidates)
+        # Preserve the initial mined count captured earlier; only set it now if it wasn't populated.
+        if not self.audit.candidates_found:
+            self.audit.candidates_found = len(self.candidates)
         self.audit.candidates_enriched = sum(1 for c in self.candidates if c.is_enriched)
         self.audit.llm_calls = get_llm_call_count()
 
@@ -1661,6 +1663,9 @@ class DrugRepurposingOrchestrator:
            # Mine databases (unpack tuple: (candidates_list, chembl_target_id))
             candidates, chembl_target_id = self.data_miner.run(self.target, self.disease)
             self.candidates = candidates
+            # Capture the number of candidates immediately after mining (preserve this value)
+            # so it is not overwritten later when self.candidates may be reduced to the scored/enriched subset.
+            self.audit.candidates_found = len(candidates)
             self.candidates[0].chembl_target_id = chembl_target_id
             return self.candidates
 
