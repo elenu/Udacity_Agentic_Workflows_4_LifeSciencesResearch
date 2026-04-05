@@ -1,0 +1,91 @@
+(venv) project student$ /opt/venv/bin/python /workspace/code/project/starter/scaffold_Elena.py
+2026-04-05 15:40:14,513 [WARNING] Could not import is_action_space.action_space (will use mock fallbacks if available): No module named 'is_action_space'
+2026-04-05 15:40:14,518 [INFO] Mock mode enabled - skipping OpenAI client initialization
+
+============================================================
+DRUG REPURPOSING AGENTIC WORKFLOW
+Target: TMEM97 | Disease: non-alcoholic steatohepatitis
+Mock mode: True
+============================================================
+
+[Planning] Creating action plan...
+  Objective: Find repurposable drugs for TMEM97 in non-alcoholic steatohepatitis
+  Steps: ['data_mining', 'enrichment', 'scoring', 'roadmap']
+
+[Step 1] Query databases for compounds
+2026-04-05 15:40:14,524 [INFO] DataMiningAgent: Starting sequential data mining...
+2026-04-05 15:40:14,524 [INFO]   Step 1/3: Found 5 compounds from ChEMBL
+2026-04-05 15:40:14,524 [INFO]   Step 2/3: Found 2 drugs from Open Targets
+2026-04-05 15:40:14,525 [INFO]   Step 3/3: Merged to 6 unique candidates
+2026-04-05 15:40:14,525 [INFO]   Final: 6 unique candidates
+
+[Step 2] Enrich candidates with literature and safety data
+  Enriching top 5 candidates...
+    ✓ Haloperidol ...
+    ✓ Siramesine ...
+    ✓ PB28 ...
+    ✓ Rimcazole ...
+    ✓ Cutamesine ...
+
+[Step 3] Score and rank candidates
+2026-04-05 15:40:14,526 [INFO] EvaluationAgent: Starting evaluator-optimizer loop...
+2026-04-05 15:40:14,526 [INFO] EvaluationAgent: Starting iteration 1...
+2026-04-05 15:40:14,526 [INFO] EvaluationAgent: Starting iteration 2...
+
+[Step 4] Generate validation roadmap
+  Generating validation roadmap...
+
+============================================================
+COMPLETE | LLM calls: 24 | Candidates: 5 (5 enriched)
+============================================================
+
+============================================================
+TOP CANDIDATES
+============================================================
+
+1. Siramesine (CHEMBL266912)
+   Score: 6.74 | Phase: 2 | pChEMBL: 8.1
+   Scores: {'target_binding': 10, 'literature_support': 6, 'safety_profile': 7, 'development_stage': 6, 'disease_relevance': 0.0}
+   Literature: moderate | Safety: None
+   Rationale: Strong target binding combined with clinical data supports repurposing potential. Safety is manageable with monitoring....
+
+2. Haloperidol (CHEMBL53)
+   Score: 6.58 | Phase: 4 | pChEMBL: 8.5
+   Scores: {'target_binding': 10, 'literature_support': 6, 'safety_profile': 3, 'development_stage': 10, 'disease_relevance': 0.0}
+   Literature: moderate | Safety: ['BOXED_WARNING', 'HIGH_SERIOUS_RATIO']
+   Rationale: Strong target binding combined with clinical data supports repurposing potential. Safety is manageable with monitoring....
+
+3. Rimcazole (CHEMBL1627)
+   Score: 5.74 | Phase: 2 | pChEMBL: 7.2
+   Scores: {'target_binding': 8, 'literature_support': 6, 'safety_profile': 5, 'development_stage': 6, 'disease_relevance': 0.0}
+   Literature: moderate | Safety: None
+   Rationale: Strong target binding combined with clinical data supports repurposing potential. Safety is manageable with monitoring....
+
+------------------------------------------------------------
+EVALUATOR-OPTIMIZER HISTORY
+------------------------------------------------------------
+
+  Iteration 1:
+    Rankings: ['Siramesine:6.74', 'Haloperidol:6.58', 'Rimcazole:5.74']
+
+  Iteration 2:
+    Rankings: ['Siramesine:6.74', 'Haloperidol:6.58', 'Rimcazole:5.74']
+
+============================================================
+VALIDATION ROADMAP
+============================================================
+## Validation Roadmap
+
+### Executive Summary
+Top candidates warrant validation.
+
+### Month 1
+Target engagement assays
+
+### Month 2
+Disease models
+
+### Month 3
+Go/no-go decision
+Saved: ./candidates_tmem97_non_alcoholic_steatohepatitis.csv
+Saved: ./audit_tmem97_non_alcoholic_steatohepatitis.json
