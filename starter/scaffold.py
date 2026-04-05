@@ -604,8 +604,10 @@ class BaseAgent:
         if "support_level" in pl and "supporting_pmids" in pl:
             return json.dumps({"support_level": "moderate", "strength": 6, "supporting_pmids": ["31234567"],
                                "summary": "Evidence suggests target engagement with potential disease relevance."})
-        if "critique" in pl and "ranking" in pl:
-            return "Rankings are appropriate. The candidates are well-ordered by binding affinity and development stage."
+        # Return a clear decision signal at the start for critique prompts so both mock and live runs
+        # produce an explicit approval or critique line the optimizer can parse.
+        if "current top rankings" in pl or "decision:" in pl or ("critique" in pl and "rank" in pl):
+            return "Decision: Rankings are appropriate\n\nThe current ordering aligns with binding affinity and development stage; no adjustments recommended."
         if "suggest score adjustments" in pl or "adjustments" in pl:
             return json.dumps([])
         if "2-sentence rationale" in pl or "rationale" in pl:
@@ -962,35 +964,43 @@ class LiteratureAgent(BaseAgent):
         # Collect articles, avoiding duplicates (track seen PMIDs)
         seen_pmids = set() # track seen_pmids for deduplication
         for query in queries[:MAX_PUBMED_QUERIES_PER_CANDIDATE]:
-            results = query_pubmed(query, max_results=3)
+            results = query_pubmed(query, max_results=3) or []
             candidate.provenance.pubmed_queries_tried.append(query)
             for article in results:
-                if article["pmid"] not in seen_pmids:
-                    seen_pmids.add(article["pmid"])
-                    candidate.pubmed_articles.append(article)
-            if len(candidate.pubmed_articles) >= MAX_PUBMED_ARTICLES_PER_CANDIDATE:
+                pmid = article.get("pmid")
+                if not pmid:
+                    continue
+                if pmid in seen_pmids:
+                    continue
+                seen_pmids.add(pmid)
+                articles.append(article)
+            if len(articles) >= MAX_PUBMED_ARTICLES_PER_CANDIDATE:
                 break
 
+        # Save retrieved articles to candidate (evidence fidelity)
+        candidate.pubmed_articles = articles[:MAX_PUBMED_ARTICLES_PER_CANDIDATE]
+        candidate.provenance.pubmed_pmids = [a.get("pmid") for a in candidate.pubmed_articles if a.get("pmid")]
+
+         # Ensure provenance query list is unique and limited
+        candidate.provenance.pubmed_queries_tried = list(dict.fromkeys(candidate.provenance.pubmed_queries_tried))[:MAX_PUBMED_QUERIES_PER_CANDIDATE]
+
         # CHAIN STEP 2: Assess articles with LLM
-        if candidate.pubmed_articles:
-            assessment = self._assess_articles(candidate.pubmed_articles, drug, target, disease) # This chains the search results into LLM analysis
-            # Update candidate fields from assessment:
-            candidate.literature_support_level = assessment["support_level"]
-            candidate.literature_strength = assessment["strength"]
-            candidate.literature_summary = assessment["summary"]
-            candidate.literature_supporting_pmids = assessment["supporting_pmids"]
-            # Update provenance with article info:
-            candidate.pubmed_articles = articles
-            candidate.provenance.pubmed_pmids = [a["pmid"] for a in articles]
-            candidate.provenance.pubmed_queries_tried = queries
+        if articles:
+            assessment = self._assess_articles(articles, drug, target, disease)  # LLM analysis
+            # Update candidate fields from assessment
+            candidate.literature_support_level = assessment.get("support_level", "none")
+            candidate.literature_strength = int(assessment.get("strength", 0) or 0)
+            candidate.literature_summary = assessment.get("summary", "")
+            candidate.literature_supporting_pmids = assessment.get("supporting_pmids", [])
         else:
             candidate.literature_support_level = "none"
             candidate.literature_strength = 0
             candidate.literature_summary = f"No relevant literature found for {candidate.name} with target {target} and disease {disease}."
             candidate.literature_supporting_pmids = []
-            candidate.pubmed_articles = []
-            candidate.provenance.pubmed_pmids = []
-            candidate.provenance.pubmed_queries_tried = queries
+            # ensure provenance still records the queries attempted
+            candidate.provenance.pubmed_pmids = candidate.provenance.pubmed_pmids or []
+            candidate.pubmed_articles = candidate.pubmed_articles or []
+            candidate.provenance.pubmed_queries_tried = candidate.provenance.pubmed_queries_tried or queries
 
         # =====================================================================
         # END TODO 4
@@ -1342,20 +1352,9 @@ class EvaluationAgent(BaseAgent):
     def _critique_rankings(self, top: List[DrugCandidate], target: str,
                            disease: str) -> str:
         """
-        EVALUATOR: Critique current rankings.
+         EVALUATOR: Critique current rankings.
 
         TODO 8: Write a prompt that critiques the current rankings.
-
-        Your prompt should:
-        - Show the target and disease context
-        - Present current top candidates with key metrics (use the summary below)
-        - Ask LLM to evaluate if rankings are reasonable and well-balanced
-
-        Important instruction to include:
-        - If rankings are good, respond with exactly: "Rankings are appropriate"
-        - If issues exist, identify specific problems and suggest adjustments
-
-        The "Rankings are appropriate" phrase triggers loop exit.
         """
         summary = "\n".join([
             f"{i + 1}. {c.name}: Score={c.total_score:.2f}, pChEMBL={c.pchembl_value}, "
@@ -1367,18 +1366,30 @@ class EvaluationAgent(BaseAgent):
         # TODO 8: Write your critique prompt here
         # =====================================================================
         prompt = f"""
-        TARGET: {target}
-        DISEASE: {disease}
-        CURRENT RANKINGS: {summary}
-        
-        Evaluate the current rankings of drug candidates for repurposing. 
-        
-        Are they reasonable and well-balanced based on the data provided? 
-        Criteria to consider in this answer include:
-        - If you think the rankings are good, respond with exactly "Rankings are appropriate". 
-        - If you see issues, identify specific problems and suggest adjustments to improve the rankings.
-        """
+        You are an expert drug-repurposing evaluator. Context:
+        - TARGET: {target}
+        - DISEASE: {disease}
 
+        CURRENT TOP RANKINGS:
+        {summary}
+
+        IMPORTANT: Begin your reply with a single-line decision signal EXACTLY either:
+          Decision: Rankings are appropriate
+        or:
+          Decision: Rankings require adjustments
+
+        TASK:
+        1) After the decision line, provide a concise evaluation (2-4 sentences) commenting on whether the rankings are
+           reasonable given the provided metrics (binding, development stage, literature strength, safety flags).
+        2) If you conclude adjustments are needed, list concrete, actionable issues (one per line) such as:
+           - Candidate <NAME> is overrated because <reason> -- adjust <component> by <direction>
+           - Candidate <NAME> is underrated because <reason> -- adjust <component> by <direction>
+           where <component> is one of: target_binding, literature_support, safety_profile, development_stage, disease_relevance
+           and <direction> is e.g. "decrease by 1" or "increase by 1".
+        3) Keep the critique factual and grounded in the numbers shown above. Do NOT produce JSON here; produce human-readable critique only.
+
+        NOTE: The optimizer expects the leading "Decision:" line as a clear natural-language approval or critique signal.
+        """
         return self._call_llm(prompt)
         # =====================================================================
         # END TODO 8
@@ -1390,54 +1401,59 @@ class EvaluationAgent(BaseAgent):
         OPTIMIZER: Refine rankings based on critique.
 
         TODO 9: Write a prompt that suggests score adjustments, then apply them.
-
-        Part A - Write prompt requesting adjustments as JSON array:
-        [
-            {
-                "drug_name": "name of drug to adjust",
-                "component": "target_binding|literature_support|safety_profile|development_stage|disease_relevance",
-                "adjustment": -2 to +2,
-                "reason": "brief justification"
-            }
-        ]
-
-        Part B - Apply adjustments to candidates:
-        - Build lookup dict: {name.lower(): candidate for each candidate}
-        - For each adjustment:
-            - Find candidate by name (case-insensitive)
-            - Validate component is in WEIGHTS
-            - Clamp adjustment to [-2, +2]
-            - Apply: new_score = old_score + adjustment, clamped to [0, 10]
-            - Update candidate.scores[component]
-            - Recalculate candidate.total_score
-            - Track applied adjustment with old/new scores
-
-        Part C - Re-sort candidates by total_score descending
-
-        Return: (candidates, list_of_applied_adjustments)
-
-        HINTS:
-        - Also try lookup with normalize_drug_name(drug_name)
-        - Track: drug, component, adjustment, old_component_score, new_component_score, old_total, new_total
+        ...
         """
+
+        # Build a detailed context of current candidates for the optimizer LLM
+        candidates_context = "\n".join([
+            json.dumps({
+                "name": c.name,
+                "pchembl_value": c.pchembl_value,
+                "phase": c.max_phase,
+                "literature_strength": c.literature_strength,
+                "safety_flags": c.safety_flags,
+                "scores": c.scores,
+                "total_score": round(c.total_score, 3)
+            }) for c in candidates
+        ])
+
+        # Provide a human-readable ranking snapshot to accompany the critique
+        ranking_snapshot = "\n".join([
+            f"{i+1}. {c.name} | Total:{round(c.total_score,3)} | tb={c.scores.get('target_binding',0)} ls={c.scores.get('literature_support',0)} "
+            f"sp={c.scores.get('safety_profile',0)} ds={c.scores.get('development_stage',0)} dr={round(c.scores.get('disease_relevance',0),2)}"
+            for i, c in enumerate(sorted(candidates, key=lambda x: x.total_score, reverse=True))
+        ])
 
         # =====================================================================
         # TODO 9: Write prompt and apply adjustments
         # =====================================================================
         prompt = f"""
-        You receive current rankings and critique text. 
-        Based on the critique, suggest specific score adjustments to improve the rankings.
-        For each adjustment, refinement returns a parseable JSON array of adjustments (or empty list fallback) with keys:
-        [
-            {{
-                "drug_name": "name of drug to adjust",
-                "component": "target_binding|literature_support|safety_profile|development_stage|disease_relevance",
-                "adjustment": -2 to +2,
-                "reason": "brief justification"
-            }}
-        ]
+        You are an optimizer for candidate rankings. Use the provided CRITIQUE text (which begins with a leading
+        "Decision: ..." line) and the current ranking snapshot to produce a PARSEABLE JSON ARRAY (or an empty array)
+        of adjustments to component scores.
 
-        CRITIQUE: {critique}
+        INPUTS:
+        - CRITIQUE (human-readable): {critique}
+        - RANKING_SNAPSHOT (current ordered list; compact names, totals, and per-component scores):
+{ranking_snapshot}
+        - CANDIDATES (full context, JSON per line): {candidates_context}
+
+        OUTPUT REQUIREMENTS:
+        - Return ONLY a JSON array. Each element must be an object with keys:
+          {{
+            "drug_name": "<exact candidate.name>",
+            "component": "target_binding|literature_support|safety_profile|development_stage|disease_relevance",
+            "adjustment": -2 | -1 | 0 | 1 | 2,
+            "reason": "brief justification (1 sentence)"
+          }}
+        - Adjustments MUST be integers in [-2, -1, 0, 1, 2] and must correct the specific issues named in the critique.
+        - If the CRITIQUE begins with 'Decision: Rankings are appropriate' return [].
+        - Do not propose adjustments for candidates not present in the CANDIDATES list.
+        - If no adjustments are needed, return [].
+
+        GUIDANCE:
+        - Keep adjustments conservative (±1 preferred, ±2 only for clear, large mis-rankings).
+        - Ensure the reason cites the metric (e.g., "low literature_strength" or "high boxed warning").
         """
 
         adjustments = self._call_llm_json(prompt, [])
@@ -1445,30 +1461,43 @@ class EvaluationAgent(BaseAgent):
             adjustments = [adjustments]
         applied = []
 
-        # Build lookup for finding candidates by name
+        # Build lookup for finding candidates by name (case-insensitive) and normalized names
         lookup = {c.name.lower(): c for c in candidates}
+        norm_lookup = {normalize_drug_name(c.name): c for c in candidates}
 
         # Apply each adjustment
         for adj in adjustments:
-            drug_name = adj["drug_name"].lower()
-            if drug_name in lookup:
-                candidate = lookup[drug_name]
-                if adj["component"] in self.WEIGHTS:
-                    # Validate and clamp adjustment
-                    adjustment = max(-2, min(2, adj["adjustment"]))
-                    old_score = candidate.scores[adj["component"]]
-                    new_score = max(0, min(10, old_score + adjustment))
-                    candidate.scores[adj["component"]] = new_score
-                    candidate.total_score = sum(candidate.scores[comp] * self.WEIGHTS[comp] for comp in candidate.scores)
-                    applied.append({
-                        "drug": drug_name,
-                        "component": adj["component"],
-                        "adjustment": adjustment,
-                        "old_component_score": old_score,
-                        "new_component_score": new_score,
-                        "old_total": sum(candidate.scores[comp] * self.WEIGHTS[comp] for comp in candidate.scores) - adjustment * self.WEIGHTS[adj["component"]],
-                        "new_total": candidate.total_score
-                    })
+            try:
+                drug_key = (adj.get("drug_name") or "").strip()
+                if not drug_key:
+                    continue
+                drug_name_lower = drug_key.lower()
+                candidate = lookup.get(drug_name_lower) or norm_lookup.get(normalize_drug_name(drug_key))
+                if not candidate:
+                    continue
+                comp = adj.get("component")
+                if comp not in self.WEIGHTS:
+                    continue
+                # Validate and clamp adjustment to integer in [-2,2]
+                raw_adj = int(adj.get("adjustment", 0))
+                adjustment = max(-2, min(2, raw_adj))
+                old_comp_score = candidate.scores.get(comp, 0)
+                new_comp_score = max(0, min(10, old_comp_score + adjustment))
+                old_total = candidate.total_score
+                candidate.scores[comp] = new_comp_score
+                candidate.total_score = sum(candidate.scores.get(k, 0) * w for k, w in self.WEIGHTS.items())
+                applied.append({
+                    "drug": candidate.name,
+                    "component": comp,
+                    "adjustment": adjustment,
+                    "old_component_score": old_comp_score,
+                    "new_component_score": new_comp_score,
+                    "old_total": old_total,
+                    "new_total": candidate.total_score,
+                    "reason": adj.get("reason", "")
+                })
+            except Exception:
+                continue
 
         # Re-sort
         candidates.sort(key=lambda c: c.total_score, reverse=True)
