@@ -8,7 +8,7 @@ for potential drug candidates, enrich these candidates with literature and safet
 and ultimately score, rank, and create a validation roadmap through an evaluator-optimizer 
 loop. You can find the corresponding code inside ```starter/scaffold.py```.
 
-## LEARNING OBJECTIVES DEMONSTRATED
+## Demonstrated Learning Objectives
 
 Objectives I achieved with this project:
 - Sequential workflows (DataMiningAgent)
