@@ -12,28 +12,12 @@ You will implement a multi-agent system that:
 5. Scores and ranks candidates using an evaluator-optimizer loop (EvaluationAgent)
 6. Generates a validation roadmap (EvaluationAgent)
 
-LEARNING OBJECTIVES DEMONSTRATED:
-- Sequential workflows (DataMiningAgent)
-- Prompt chaining (LiteratureAgent: search -> assess)
-- LLM-based routing (RoutingAgent)
-- Evaluator-optimizer pattern (EvaluationAgent)
-- Multi-agent orchestration (DrugRepurposingOrchestrator)
-
-HOW TO RUN:
-    # Mock mode (no API keys needed - use for development)
-    USE_MOCK_DATA=true python scaffold.py
-
-    # Live mode (requires API keys)
-    OPENAI_API_KEY=your_key python scaffold.py
-
 INSTRUCTIONS:
-    Search for "TODO" comments - there are 10 tasks to complete.
-    Each TODO includes hints and expected behavior.
 
-    Focus on:
-    - Writing effective prompts that produce structured JSON output
-    - Implementing the workflow patterns (sequential, chaining, eval-optimizer)
-    - Understanding how agents coordinate through the orchestrator
+Focus on:
+- Writing effective prompts that produce structured JSON output
+- Implementing the workflow patterns (sequential, chaining, eval-optimizer)
+- Understanding how agents coordinate through the orchestrator
 """
 
 import os
@@ -52,7 +36,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # =============================================================================
-# API QUERY FUNCTIONS TO OBTAIN DATA  (PROVIDED - DO NOT MODIFY)
+# API QUERY FUNCTIONS TO OBTAIN DATA
 # =============================================================================
 
 import sys
@@ -110,7 +94,7 @@ except Exception as e:
         return {"label_found": False, "boxed_warning": ""}
 
 # =============================================================================
-# CONFIGURATION (PROVIDED - DO NOT MODIFY)
+# CONFIGURATION
 # =============================================================================
 
 load_dotenv(".env")
@@ -146,7 +130,7 @@ AGENT_REGISTRY = {
 
 
 # =============================================================================
-# OPENAI CLIENT SETUP (PROVIDED - DO NOT MODIFY)
+# OPENAI CLIENT SETUP
 # =============================================================================
 
 def init_openai_client():
@@ -175,7 +159,7 @@ def init_openai_client():
 client = init_openai_client()
 
 # =============================================================================
-# UTILITY FUNCTIONS (PROVIDED - DO NOT MODIFY)
+# UTILITY FUNCTIONS
 # =============================================================================
 
 STOPWORDS = {"a", "an", "and", "or", "the", "of", "to", "in", "with", "for", "on", "by", "from",
@@ -290,7 +274,7 @@ def robust_parse_json(response: str, fallback: Any = None) -> Any:
 
 
 # =============================================================================
-# HTTP HELPERS (PROVIDED - DO NOT MODIFY)
+# HTTP HELPERS
 # =============================================================================
 
 def _cache_path(source: str, key: str) -> str:
@@ -351,7 +335,7 @@ def robust_request(method: str, url: str, *, params: Optional[Dict] = None,
 
 
 # =============================================================================
-# DATA CLASSES (PROVIDED - DO NOT MODIFY)
+# DATA CLASSES
 # =============================================================================
 
 @dataclass
@@ -450,7 +434,7 @@ class RepurposingResult:
 
 
 # =============================================================================
-# MOCK DATA (PROVIDED - DO NOT MODIFY)
+# MOCK DATA
 # =============================================================================
 
 MOCK_CHEMBL_DATA = {
@@ -536,7 +520,7 @@ def get_mock_fda_label(drug_name: str) -> Dict:
     return MOCK_FDA_LABELS.get(normalize_drug_name(drug_name), MOCK_FDA_LABELS["default"])
 
 # =============================================================================
-# BASE AGENT CLASS (PROVIDED - DO NOT MODIFY)
+# BASE AGENT CLASS
 # =============================================================================
 
 _llm_call_count = 0
@@ -622,7 +606,7 @@ class BaseAgent:
 # =============================================================================
 # =============================================================================
 #
-#                         YOUR IMPLEMENTATION BELOW
+#                         MY IMPLEMENTATION
 #
 # =============================================================================
 # =============================================================================
@@ -1718,7 +1702,7 @@ class DrugRepurposingOrchestrator:
 
 
 # =============================================================================
-# OUTPUT FUNCTIONS (PROVIDED - DO NOT MODIFY)
+# OUTPUT FUNCTIONS
 # =============================================================================
 
 def print_results(result: RepurposingResult):
@@ -1826,7 +1810,7 @@ def export_results(result: RepurposingResult, output_dir: str = "."):
 
 
 # =============================================================================
-# MAIN (PROVIDED - DO NOT MODIFY)
+# MAIN
 # =============================================================================
 
 def main():
