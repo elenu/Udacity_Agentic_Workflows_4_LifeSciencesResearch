@@ -20,9 +20,13 @@ Objectives I achieved with this project:
 ## How to run it
 
 Mock mode (no API keys needed, used for development):
+
 ```USE_MOCK_DATA=true``` <- In ```env.txt``` (you need to save as .env)
+
 ```python scaffold.py```
 
 Live mode (requires API keys):
+
 ```OPENAI_API_KEY=your_key``` <- In ```env.txt``` (you need to save as .env)
+
 ```python scaffold.py```
